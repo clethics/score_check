@@ -116,7 +116,7 @@
       <div id="uploadSection" class="bg-white rounded-lg shadow-lg p-6 mb-6">
         <h2 class="text-2xl font-semibold text-indigo-800 mb-4">엑셀 파일 검증</h2>
         <div class="bg-yellow-50 border-2 border-yellow-300 rounded-lg p-4 mb-4">
-          <p class="text-sm text-gray-700">⚠️ 먼저 <strong>채점기준을 설정</strong>한 후, 엑셀 파일을 업로드하여 점수를 검증하세요.<br>
+          <p class="text-sm text-gray-700" id="uploadRangeInfo">⚠️ 먼저 <strong>채점기준을 설정</strong>한 후, 엑셀 파일을 업로드하여 점수를 검증하세요.<br>
             📋 <strong>B6:I39 범위</strong>의 셀만 검증합니다.</p>
         </div>
         <div class="mb-4">
@@ -170,6 +170,30 @@ function getAssessmentMeta() {
 
   return { grade, classCount, studentNum };
 }
+
+function updateRangeInfo() {
+  const classCount = parseInt(document.getElementById('classCountInput').value, 10);
+  const studentNum = parseInt(document.getElementById('studentNumInput').value, 10);
+  let info = "⚠️ 먼저 <strong>채점기준을 설정</strong>한 후, 엑셀 파일을 업로드하여 점수를 검증하세요.<br>📋 <strong>";
+  if (classCount && studentNum) {
+    // 예: B6:I35
+    const startCol = 1;
+    const endCol = startCol + classCount - 1;
+    const startColLetter = XLSX.utils.encode_col(startCol);
+    const endColLetter = XLSX.utils.encode_col(endCol);
+    const startRow = 6;
+    const endRow = 5 + studentNum;
+    info += `${startColLetter}${startRow}:${endColLetter}${endRow}`;
+  } else {
+    info += "B6:I39";
+  }
+  info += " 범위</strong>의 셀만 검증합니다.";
+  document.getElementById('uploadRangeInfo').innerHTML = info;
+}
+["classCountInput", "studentNumInput"].forEach(id=>{
+  document.getElementById(id).addEventListener('input', updateRangeInfo);
+});
+updateRangeInfo();
 
 async function onConfigChange(config) {
   const bgColor = config.background_color || defaultConfig.background_color;
@@ -269,7 +293,6 @@ function loadAssessment(id) {
   steps = stepsData.steps;
   possibleTotalScores = stepsData.possibleScores;
 
-  // 입력 폼 값 채우기
   document.getElementById('subjectSelect').value = assessment.subject;
   document.getElementById('assessmentInput').value = assessment.assessment_name;
   if (stepsData.grade) document.getElementById('gradeSelect').value = stepsData.grade;
@@ -465,10 +488,8 @@ function calculatePossibleScores() {
 function cartesianProduct(arrays) {
   if (arrays.length === 0) return [[]];
   if (arrays.length === 1) return arrays[0].map(x => [x]);
-
   const [first, ...rest] = arrays;
   const restProduct = cartesianProduct(rest);
-
   return first.flatMap(x =>
     restProduct.map(combination => [x, ...combination])
   );
@@ -541,36 +562,33 @@ document.getElementById('fileUpload').addEventListener('change', handleFileUploa
 async function handleFileUpload(e) {
   const file = e.target.files[0];
   if (!file) return;
-
+  const {grade, classCount, studentNum} = getAssessmentMeta();
   if (possibleTotalScores.length === 0) {
     showToast('먼저 단계별 채점기준을 설정해주세요!', 'error');
     e.target.value = '';
     return;
   }
-  // 검사용 메타정보
-  const {grade, classCount, studentNum} = getAssessmentMeta();
   if (!grade || !classCount || !studentNum) {
     showToast('학년, 반 수, 번호 수를 모두 입력하세요!', 'error');
     e.target.value = '';
     return;
   }
-
   document.getElementById('fileInfo').innerHTML = `<span class="text-blue-600">파일 ${file.name} 검증 중...</span>`;
   document.getElementById('resultsSection').classList.add('hidden');
 
   try {
-    const data = await readExcelFile(file);
+    // 동적으로 검사 범위 지정
+    const data = await readExcelFile(file, classCount, studentNum);
     validateData(data, file.name, grade, classCount, studentNum);
   } catch (error) {
     console.error('엑셀 파일 읽기 오류:', error);
     showToast('파일을 읽는 중 오류가 발생했습니다.', 'error');
     document.getElementById('fileInfo').innerHTML = '<span class="text-red-600">파일 읽기 실패</span>';
   }
-
   e.target.value = '';
 }
 
-function readExcelFile(file) {
+function readExcelFile(file, classCount, studentNum) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -582,11 +600,18 @@ function readExcelFile(file) {
           reject(new Error('엑셀 파일에 시트가 없습니다.'));
           return;
         }
-
         const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-        const range = XLSX.utils.decode_range('B6:I39');
-        const rangeData = [];
+        // "B"~(B+classCount-1), 6~(5+studentNum) 범위로
+        const startCol = 1; // B=col 1 ('A'=0)
+        const endCol = startCol + classCount - 1;
+        const startRow = 6;
+        const endRow = 5 + studentNum;
+        const range = {
+          s: {c: startCol, r: startRow - 1},
+          e: {c: endCol, r: endRow - 1}
+        };
 
+        const rangeData = [];
         for (let row = range.s.r; row <= range.e.r; row++) {
           const rowData = {};
           for (let col = range.s.c; col <= range.e.c; col++) {
@@ -601,12 +626,10 @@ function readExcelFile(file) {
           }
           rangeData.push(rowData);
         }
-
         if (rangeData.length === 0) {
-          reject(new Error('엑셀 파일의 B6:I39 범위가 비어있습니다.'));
+          reject(new Error('설정한 범위에 데이터가 없습니다.'));
           return;
         }
-
         resolve(rangeData);
       } catch (error) {
         reject(error);
@@ -616,12 +639,10 @@ function readExcelFile(file) {
     reader.readAsArrayBuffer(file);
   });
 }
-// 학번 생성 함수
 function makeStudentId(grade, colIdx, rowIdx, classCount, studentNum) {
-  // colIdx: 0(B)~7(I), rowIdx: 0(6행:1번)
   const ban = String(colIdx + 1);
   let bunho = rowIdx + 1;
-  // 여기서 결번, 예외 등 필요한 경우 if (bunho===17)... 처럼 조정 가능
+  // 결번 등 특별 예외 필요하면 여기에 적용
   if (bunho > studentNum) return null; // 없는 번호라면 표시안함
   return `${grade}${ban}${String(bunho).padStart(2,'0')}`;
 }
@@ -629,7 +650,6 @@ function makeStudentId(grade, colIdx, rowIdx, classCount, studentNum) {
 function validateData(data, fileName, grade, classCount, studentNum) {
   const errors = [];
   let totalChecked = 0;
-
   data.forEach((row, rowIdx) => {
     const actualRow = row._row;
 
@@ -646,7 +666,6 @@ function validateData(data, fileName, grade, classCount, studentNum) {
 
       if (!possibleTotalScores.includes(scoreNum)) {
         const cellAddress = `${columnName}${actualRow}`;
-        // colIdx: 0(B)~7(I)
         const colIdx = columnName.charCodeAt(0) - 66;
         const studentId = makeStudentId(grade, colIdx, rowIdx, classCount, studentNum);
         errors.push({
@@ -687,22 +706,19 @@ function displayResults(errors, totalRows, totalChecked, fileName, grade, classC
           <h3 class="text-3xl font-bold text-gray-800 mb-2">${escapeHtml(subject)} - ${escapeHtml(assessmentName)}</h3>
           <p class="text-xl text-gray-600">검증 결과 보고서</p>
         </div>
-
         <div class="bg-green-50 border-2 border-green-300 rounded-lg p-6 mb-6">
           <h4 class="text-xl font-bold text-green-800 mb-3">✅ 검증 성공!</h4>
           <p class="text-lg text-gray-700">
-            B6:I39 범위에서 <strong class="text-green-700">${totalChecked}개 점수</strong>를 확인했습니다.<br>
+            엑셀에서 <strong class="text-green-700">${totalChecked}개 점수</strong>를 확인했습니다.<br>
             모든 점수가 채점기준에 부합합니다.
           </p>
         </div>
-
         <div class="bg-blue-50 border-2 border-blue-300 rounded-lg p-6">
           <h4 class="text-lg font-bold text-blue-800 mb-3">📊 가능한 총점</h4>
           <p class="text-base text-gray-700 leading-relaxed">
             ${possibleTotalScores.join(', ')}
           </p>
         </div>
-
         <div class="text-center mt-6 pt-6 border-t-2 border-gray-300 flex gap-3 justify-center">
           <button onclick="copyResultsTable()"
             class="bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-8 rounded-lg transition duration-200 print:hidden">
@@ -722,21 +738,18 @@ function displayResults(errors, totalRows, totalChecked, fileName, grade, classC
           <h3 class="text-3xl font-bold text-gray-800 mb-2">${escapeHtml(subject)} - ${escapeHtml(assessmentName)}</h3>
           <p class="text-xl text-gray-600">검증 결과 보고서</p>
         </div>
-
         <div class="bg-red-50 border-2 border-red-300 rounded-lg p-6 mb-6">
           <h4 class="text-xl font-bold text-red-800 mb-3">⚠️ 오류 발견</h4>
           <p class="text-lg text-gray-700">
             총 <strong class="text-red-700">${totalChecked}개 점수</strong> 중 <strong class="text-red-700">${errors.length}개 오류</strong>가 발견되었습니다.
           </p>
         </div>
-
         <div class="bg-blue-50 border-2 border-blue-300 rounded-lg p-6 mb-6">
           <h4 class="text-lg font-bold text-blue-800 mb-3">📊 가능한 총점</h4>
           <p class="text-base text-gray-700 leading-relaxed">
             ${possibleTotalScores.join(', ')}
           </p>
         </div>
-
         <div class="bg-yellow-50 border-2 border-yellow-400 rounded-lg p-6 mb-6">
           <h4 class="text-xl font-bold text-red-800 mb-4">❌ 오류 상세 내역 (${errors.length}개)</h4>
           <div class="space-y-3">
@@ -754,7 +767,6 @@ function displayResults(errors, totalRows, totalChecked, fileName, grade, classC
             }).join('')}
           </div>
         </div>
-
         <div class="text-center mt-6 pt-6 border-t-2 border-gray-300 flex gap-3 justify-center">
           <button onclick="copyResultsTable()"
             class="bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-8 rounded-lg transition duration-200 print:hidden">
@@ -874,3 +886,4 @@ init();
 </script>
 </body>
 </html>
+
