@@ -1,0 +1,876 @@
+<!doctype html>
+<html lang="ko" style="height: 100%;">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>수행평가 점수 검증</title>
+  <script src="/_sdk/data_sdk.js"></script>
+  <script src="/_sdk/element_sdk.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { box-sizing: border-box; }
+    @media print {
+      .print\:hidden { display: none !important; }
+      .print\:border-2 { border-width: 2px !important; }
+    }
+  </style>
+  <style>@view-transition { navigation: auto; }</style>
+</head>
+<body style="height: 100%; margin: 0; font-family: 'Noto Sans KR', sans-serif;">
+  <div id="app" class="w-full h-full bg-gradient-to-br from-blue-50 to-indigo-100 overflow-auto">
+    <div class="max-w-6xl mx-auto p-6">
+      <h1 id="pageTitle" class="text-4xl font-bold text-indigo-900 mb-8 text-center">수행평가 점수 검증</h1>
+      <!-- 과목 및 수행평가 선택 -->
+      <div class="bg-white rounded-lg shadow-lg p-6 mb-6">
+        <h2 class="text-2xl font-semibold text-indigo-800 mb-4">과목 및 수행평가 선택</h2>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+          <div>
+            <label for="subjectSelect" class="block text-sm font-medium text-gray-700 mb-2">과목</label>
+            <select id="subjectSelect" class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
+              <option value="">-- 과목 선택 --</option>
+              <option value="국어">국어</option>
+              <option value="영어">영어</option>
+              <option value="수학">수학</option>
+              <option value="사회">사회</option>
+              <option value="과학">과학</option>
+              <option value="도덕">도덕</option>
+              <option value="기술가정">기술가정</option>
+              <option value="체육">체육</option>
+              <option value="음악">음악</option>
+              <option value="미술">미술</option>
+              <option value="한문">한문</option>
+            </select>
+          </div>
+          <div>
+            <label for="assessmentInput" class="block text-sm font-medium text-gray-700 mb-2">수행평가명</label>
+            <input type="text" id="assessmentInput" placeholder="예: 1학기 중간평가" class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
+          </div>
+          <div>
+            <label for="gradeSelect" class="block text-sm font-medium text-gray-700 mb-2">학년</label>
+            <select id="gradeSelect" class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg">
+              <option value="">-- 학년 선택 --</option>
+              <option value="1">1학년</option>
+              <option value="2">2학년</option>
+              <option value="3">3학년</option>
+            </select>
+          </div>
+          <div>
+            <label for="classCountInput" class="block text-sm font-medium text-gray-700 mb-2">반 수(예: 8)</label>
+            <input type="number" id="classCountInput" min="1" max="20" placeholder="예: 8" class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg">
+          </div>
+          <div>
+            <label for="studentNumInput" class="block text-sm font-medium text-gray-700 mb-2">번호 수(예: 28, 한 반에 몇 번까지)</label>
+            <input type="number" id="studentNumInput" min="1" max="60" placeholder="예: 28" class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg">
+          </div>
+        </div>
+        <div class="flex gap-2">
+          <button id="newAssessmentBtn" class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 px-6 rounded-lg transition duration-200"> 새 평가 만들기 </button>
+          <button id="loadAssessmentBtn" class="flex-1 bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-6 rounded-lg transition duration-200"> 저장된 평가 불러오기 </button>
+        </div>
+        <div id="currentAssessment" class="mt-4 hidden">
+          <div class="bg-indigo-50 border-2 border-indigo-300 rounded-lg p-4">
+            <div class="font-bold text-lg text-indigo-900" id="currentAssessmentTitle"></div>
+            <div class="text-sm text-gray-600 mt-1" id="currentAssessmentInfo"></div>
+          </div>
+        </div>
+      </div>
+      <!-- 저장된 평가 목록 -->
+      <div id="savedAssessmentsSection" class="bg-white rounded-lg shadow-lg p-6 mb-6">
+        <h2 class="text-2xl font-semibold text-indigo-800 mb-4">저장된 평가 목록</h2>
+        <div id="savedAssessmentsList" class="space-y-2"></div>
+        <div id="emptyAssessments" class="text-gray-500 text-center py-4">
+          저장된 평가가 없습니다.
+        </div>
+      </div>
+      <!-- 단계별 채점기준 입력 -->
+      <div id="criteriaSection" class="bg-white rounded-lg shadow-lg p-6 mb-6 hidden">
+        <h2 class="text-2xl font-semibold text-indigo-800 mb-4">단계별 채점기준 설정</h2>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+          <div>
+            <label for="maxScore" class="block text-sm font-medium text-gray-700 mb-2">최고점</label>
+            <input type="number" id="maxScore" placeholder="예: 60" min="0" class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
+          </div>
+          <div>
+            <label for="minScore" class="block text-sm font-medium text-gray-700 mb-2">최저점</label>
+            <input type="number" id="minScore" placeholder="예: 20" min="0" class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
+          </div>
+          <div>
+            <label for="interval" class="block text-sm font-medium text-gray-700 mb-2">급간 (점수 간격)</label>
+            <input type="number" id="interval" placeholder="예: 10" min="0" class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
+          </div>
+        </div>
+        <button id="addStepBtn" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 px-6 rounded-lg transition duration-200 mb-4">
+          단계 추가
+        </button>
+        <!-- 등록된 단계 목록 -->
+        <div id="stepsList" class="space-y-2 mb-4"></div>
+        <!-- 가능한 총점 표시 -->
+        <div id="possibleScores" class="mt-4"></div>
+        <!-- 저장 버튼 -->
+        <button id="saveAssessmentBtn" class="w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold py-3 px-6 rounded-lg transition duration-200 mt-4">
+          평가 저장하기
+        </button>
+      </div>
+      <!-- 엑셀 업로드 섹션 -->
+      <div id="uploadSection" class="bg-white rounded-lg shadow-lg p-6 mb-6">
+        <h2 class="text-2xl font-semibold text-indigo-800 mb-4">엑셀 파일 검증</h2>
+        <div class="bg-yellow-50 border-2 border-yellow-300 rounded-lg p-4 mb-4">
+          <p class="text-sm text-gray-700">⚠️ 먼저 <strong>채점기준을 설정</strong>한 후, 엑셀 파일을 업로드하여 점수를 검증하세요.<br>
+            📋 <strong>B6:I39 범위</strong>의 셀만 검증합니다.</p>
+        </div>
+        <div class="mb-4">
+          <label for="fileUpload" id="uploadButton" class="w-full inline-block bg-green-600 hover:bg-green-700 text-white font-semibold py-4 px-6 rounded-lg text-center cursor-pointer transition duration-200 text-lg">
+            📊 엑셀 파일 업로드 및 검증
+          </label>
+          <input type="file" id="fileUpload" accept=".xlsx,.xls" class="hidden">
+        </div>
+        <div id="fileInfo" class="text-sm text-gray-600"></div>
+      </div>
+      <!-- 검증 결과 -->
+      <div id="resultsSection" class="bg-white rounded-lg shadow-lg p-6 hidden">
+        <h2 class="text-2xl font-semibold text-indigo-800 mb-4">검증 결과</h2>
+        <div id="resultsContent"></div>
+      </div>
+    </div>
+    <!-- 토스트 메시지 컨테이너 -->
+    <div id="toastContainer" class="fixed top-4 right-4 z-50"></div>
+  </div>
+<script>
+// ------------------- 설정 변수 --------------------
+let allAssessments = [];
+let currentAssessmentData = null;
+let steps = [];
+let possibleTotalScores = [];
+let isProcessing = false;
+
+const defaultConfig = {
+  page_title: "수행평가 점수 검증",
+  upload_button_text: "📊 엑셀 파일 업로드 및 검증",
+  background_color: "#EEF2FF",
+  surface_color: "#FFFFFF",
+  text_color: "#312E81",
+  primary_action_color: "#4F46E5",
+  secondary_action_color: "#10B981",
+  font_family: "Noto Sans KR",
+  font_size: 16
+};
+
+const dataHandler = {
+  onDataChanged(data) {
+    allAssessments = data;
+    renderSavedAssessments();
+  }
+};
+
+function getAssessmentMeta() {
+  const grade = document.getElementById('gradeSelect').value;
+  const classCount = parseInt(document.getElementById('classCountInput').value, 10);
+  const studentNum = parseInt(document.getElementById('studentNumInput').value, 10);
+
+  return { grade, classCount, studentNum };
+}
+
+async function onConfigChange(config) {
+  const bgColor = config.background_color || defaultConfig.background_color;
+  const surfaceColor = config.surface_color || defaultConfig.surface_color;
+  const textColor = config.text_color || defaultConfig.text_color;
+  const primaryColor = config.primary_action_color || defaultConfig.primary_action_color;
+  const secondaryColor = config.secondary_action_color || defaultConfig.secondary_action_color;
+  const fontFamily = config.font_family || defaultConfig.font_family;
+  const fontSize = config.font_size || defaultConfig.font_size;
+
+  document.body.style.fontFamily = `${fontFamily}, 'Noto Sans KR', sans-serif`;
+  document.getElementById('app').style.background = `linear-gradient(to bottom right, ${bgColor}, ${bgColor}dd)`;
+
+  const surfaces = document.querySelectorAll('.bg-white');
+  surfaces.forEach(s => s.style.backgroundColor = surfaceColor);
+
+  document.getElementById('pageTitle').textContent = config.page_title || defaultConfig.page_title;
+  document.getElementById('pageTitle').style.color = textColor;
+  document.getElementById('pageTitle').style.fontSize = `${fontSize * 2}px`;
+
+  const headings = document.querySelectorAll('h2');
+  headings.forEach(h => {
+    h.style.color = textColor;
+    h.style.fontSize = `${fontSize * 1.5}px`;
+  });
+
+  const uploadLabel = document.getElementById('uploadButton');
+  uploadLabel.innerHTML = config.upload_button_text || defaultConfig.upload_button_text;
+  uploadLabel.style.backgroundColor = secondaryColor;
+  uploadLabel.style.fontSize = `${fontSize * 1.1}px`;
+}
+
+function renderSavedAssessments() {
+  const listEl = document.getElementById('savedAssessmentsList');
+  const emptyEl = document.getElementById('emptyAssessments');
+
+  if (allAssessments.length === 0) {
+    listEl.innerHTML = '';
+    emptyEl.classList.remove('hidden');
+    return;
+  }
+
+  emptyEl.classList.add('hidden');
+  listEl.innerHTML = allAssessments.map(assessment => {
+    const stepsData = JSON.parse(assessment.steps_data);
+    return `
+      <div class="border-2 border-gray-200 rounded-lg p-4 flex justify-between items-start hover:border-indigo-300 transition">
+        <div class="flex-1">
+          <div class="font-bold text-lg text-indigo-900">${escapeHtml(assessment.subject)} - ${escapeHtml(assessment.assessment_name)}</div>
+          <div class="text-sm text-gray-600 mt-1">${stepsData.steps.length}개 단계 | 가능한 총점: ${stepsData.possibleScores.length}개</div>
+          <div class="text-xs text-gray-500 mt-1">
+            학년: ${stepsData.grade || '?'} | 반: ${stepsData.classCount || '?'} | 번호: ${stepsData.studentNum || '?'}
+          </div>
+        </div>
+        <div class="flex gap-2">
+          <button onclick="loadAssessment('${assessment.__backendId}')"
+            class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded text-sm transition duration-200">
+            불러오기
+          </button>
+          <button onclick="deleteAssessment('${assessment.__backendId}')"
+            class="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded text-sm transition duration-200">
+            삭제
+          </button>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+async function deleteAssessment(id) {
+  if (isProcessing) return;
+
+  const assessment = allAssessments.find(a => a.__backendId === id);
+  if (!assessment) return;
+
+  isProcessing = true;
+  const result = await window.dataSdk.delete(assessment);
+  isProcessing = false;
+
+  if (result.isOk) {
+    showToast('평가가 삭제되었습니다.', 'success');
+    if (currentAssessmentData && currentAssessmentData.__backendId === id) {
+      resetCurrentAssessment();
+    }
+  } else {
+    showToast('삭제 중 오류가 발생했습니다.', 'error');
+  }
+}
+
+function loadAssessment(id) {
+  const assessment = allAssessments.find(a => a.__backendId === id);
+  if (!assessment) return;
+
+  const stepsData = JSON.parse(assessment.steps_data);
+
+  currentAssessmentData = assessment;
+  steps = stepsData.steps;
+  possibleTotalScores = stepsData.possibleScores;
+
+  // 입력 폼 값 채우기
+  document.getElementById('subjectSelect').value = assessment.subject;
+  document.getElementById('assessmentInput').value = assessment.assessment_name;
+  if (stepsData.grade) document.getElementById('gradeSelect').value = stepsData.grade;
+  if (stepsData.classCount) document.getElementById('classCountInput').value = stepsData.classCount;
+  if (stepsData.studentNum) document.getElementById('studentNumInput').value = stepsData.studentNum;
+
+  showCurrentAssessment();
+  updateStepsList();
+  calculatePossibleScores();
+
+  document.getElementById('criteriaSection').classList.remove('hidden');
+
+  showToast('평가를 불러왔습니다!', 'success');
+}
+
+document.getElementById('newAssessmentBtn').addEventListener('click', function() {
+  const subject = document.getElementById('subjectSelect').value;
+  const assessmentName = document.getElementById('assessmentInput').value.trim();
+  const {grade, classCount, studentNum} = getAssessmentMeta();
+  if (!subject || !assessmentName || !grade || !classCount || !studentNum) {
+    showToast('과목, 수행평가명, 학년, 반 수, 번호 수를 모두 입력하세요!', 'error');
+    return;
+  }
+
+  currentAssessmentData = null;
+  steps = [];
+  possibleTotalScores = [];
+
+  showCurrentAssessment();
+  updateStepsList();
+  document.getElementById('possibleScores').innerHTML = '';
+
+  document.getElementById('criteriaSection').classList.remove('hidden');
+  document.getElementById('resultsSection').classList.add('hidden');
+
+  showToast('새 평가를 시작합니다!', 'success');
+});
+
+document.getElementById('loadAssessmentBtn').addEventListener('click', function() {
+  const subject = document.getElementById('subjectSelect').value;
+  const assessmentName = document.getElementById('assessmentInput').value.trim();
+
+  if (!subject || !assessmentName) {
+    showToast('과목과 수행평가명을 입력해주세요!', 'error');
+    return;
+  }
+
+  const found = allAssessments.find(a =>
+    a.subject === subject && a.assessment_name === assessmentName
+  );
+
+  if (found) {
+    loadAssessment(found.__backendId);
+  } else {
+    showToast('해당 평가를 찾을 수 없습니다.', 'error');
+  }
+});
+
+function showCurrentAssessment() {
+  const subject = document.getElementById('subjectSelect').value;
+  const assessmentName = document.getElementById('assessmentInput').value.trim();
+
+  if (subject && assessmentName) {
+    document.getElementById('currentAssessment').classList.remove('hidden');
+    document.getElementById('currentAssessmentTitle').textContent = `${subject} - ${assessmentName}`;
+
+    const status = currentAssessmentData ? '저장된 평가 수정 중' : '새 평가 작성 중';
+    document.getElementById('currentAssessmentInfo').textContent = status;
+  }
+}
+
+function resetCurrentAssessment() {
+  currentAssessmentData = null;
+  steps = [];
+  possibleTotalScores = [];
+  document.getElementById('subjectSelect').value = '';
+  document.getElementById('assessmentInput').value = '';
+  document.getElementById('gradeSelect').value = '';
+  document.getElementById('classCountInput').value = '';
+  document.getElementById('studentNumInput').value = '';
+  document.getElementById('currentAssessment').classList.add('hidden');
+  document.getElementById('criteriaSection').classList.add('hidden');
+  document.getElementById('resultsSection').classList.add('hidden');
+  updateStepsList();
+}
+
+document.getElementById('addStepBtn').addEventListener('click', function() {
+  const maxScore = parseFloat(document.getElementById('maxScore').value);
+  const minScore = parseFloat(document.getElementById('minScore').value);
+  const interval = parseFloat(document.getElementById('interval').value);
+
+  if (isNaN(maxScore) || isNaN(minScore) || isNaN(interval) || maxScore < 0 || minScore < 0 || interval <= 0) {
+    showToast('최고점, 최저점, 급간을 올바르게 입력해주세요!', 'error');
+    return;
+  }
+
+  if (minScore > maxScore) {
+    showToast('최저점은 최고점보다 클 수 없습니다!', 'error');
+    return;
+  }
+
+  const scores = [];
+  for (let score = maxScore; score >= minScore; score -= interval) {
+    scores.push(score);
+  }
+  if (!scores.includes(minScore)) {
+    scores.push(minScore);
+  }
+
+  const stepNumber = steps.length + 1;
+  const stepName = stepNumber.toString();
+
+  steps.push({
+    id: Date.now(),
+    name: stepName,
+    maxScore,
+    minScore,
+    interval,
+    scores: scores.sort((a, b) => b - a)
+  });
+
+  document.getElementById('maxScore').value = '';
+  document.getElementById('minScore').value = '';
+  document.getElementById('interval').value = '';
+
+  updateStepsList();
+  calculatePossibleScores();
+  showToast(`${stepNumber}단계가 추가되었습니다!`, 'success');
+});
+
+function updateStepsList() {
+  const listEl = document.getElementById('stepsList');
+
+  if (steps.length === 0) {
+    listEl.innerHTML = '<div class="text-gray-500 text-center py-4">등록된 단계가 없습니다.</div>';
+    return;
+  }
+
+  listEl.innerHTML = steps.map((step, index) => `
+    <div class="bg-indigo-50 border-2 border-indigo-200 rounded-lg p-4 flex justify-between items-start">
+      <div class="flex-1">
+        <div class="font-bold text-lg text-indigo-900">${index + 1}단계</div>
+        <div class="text-sm text-gray-700 mt-1">
+          최고점: <strong>${step.maxScore}점</strong> | 최저점: <strong>${step.minScore}점</strong> | 급간: <strong>${step.interval}점</strong>
+        </div>
+        <div class="text-xs text-gray-600 mt-2">
+          가능한 점수: ${step.scores.join(', ')}
+        </div>
+      </div>
+      <button onclick="deleteStep(${step.id})"
+        class="ml-4 bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded text-sm transition duration-200">
+        삭제
+      </button>
+    </div>
+  `).join('');
+}
+
+function deleteStep(id) {
+  steps = steps.filter(s => s.id !== id);
+  updateStepsList();
+  calculatePossibleScores();
+  showToast('단계가 삭제되었습니다.', 'success');
+}
+
+function calculatePossibleScores() {
+  const scoresEl = document.getElementById('possibleScores');
+
+  if (steps.length === 0) {
+    scoresEl.innerHTML = '';
+    possibleTotalScores = [];
+    return;
+  }
+
+  const allCombinations = cartesianProduct(steps.map(s => s.scores));
+  const totalScores = allCombinations.map(combo => combo.reduce((sum, score) => sum + score, 0));
+  possibleTotalScores = [...new Set(totalScores)].sort((a, b) => b - a);
+
+  scoresEl.innerHTML = `
+    <div class="bg-green-50 border-2 border-green-300 rounded-lg p-4">
+      <div class="font-bold text-lg text-green-900 mb-2">
+        가능한 총점 (${possibleTotalScores.length}개)
+      </div>
+      <div class="text-sm text-gray-700 leading-relaxed">
+        ${possibleTotalScores.join(', ')}
+      </div>
+      <div class="text-xs text-gray-600 mt-2">
+        최고점: ${Math.max(...possibleTotalScores)}점 | 최저점: ${Math.min(...possibleTotalScores)}점
+      </div>
+    </div>
+  `;
+}
+
+function cartesianProduct(arrays) {
+  if (arrays.length === 0) return [[]];
+  if (arrays.length === 1) return arrays[0].map(x => [x]);
+
+  const [first, ...rest] = arrays;
+  const restProduct = cartesianProduct(rest);
+
+  return first.flatMap(x =>
+    restProduct.map(combination => [x, ...combination])
+  );
+}
+
+document.getElementById('saveAssessmentBtn').addEventListener('click', async function() {
+  if (isProcessing) return;
+  if (allAssessments.length >= 999 && !currentAssessmentData) {
+    showToast('최대 999개까지만 저장할 수 있습니다.', 'error');
+    return;
+  }
+
+  const subject = document.getElementById('subjectSelect').value;
+  const assessmentName = document.getElementById('assessmentInput').value.trim();
+  const {grade, classCount, studentNum} = getAssessmentMeta();
+  if (!subject || !assessmentName || !grade || !classCount || !studentNum) {
+    showToast('과목, 수행평가명, 학년, 반 수, 번호 수를 모두 입력하세요!', 'error');
+    return;
+  }
+
+  if (steps.length === 0) {
+    showToast('최소 1개 이상의 단계를 추가해주세요!', 'error');
+    return;
+  }
+
+  isProcessing = true;
+  const btn = document.getElementById('saveAssessmentBtn');
+  const originalText = btn.textContent;
+  btn.textContent = '저장 중...';
+  btn.disabled = true;
+
+  const stepsData = JSON.stringify({
+    steps: steps,
+    possibleScores: possibleTotalScores,
+    grade, classCount, studentNum
+  });
+
+  let result;
+  if (currentAssessmentData) {
+    const updatedData = {
+      ...currentAssessmentData,
+      subject,
+      assessment_name: assessmentName,
+      steps_data: stepsData
+    };
+    result = await window.dataSdk.update(updatedData);
+  } else {
+    result = await window.dataSdk.create({
+      id: Date.now().toString(),
+      subject,
+      assessment_name: assessmentName,
+      steps_data: stepsData,
+      created_at: new Date().toISOString()
+    });
+  }
+
+  btn.textContent = originalText;
+  btn.disabled = false;
+  isProcessing = false;
+
+  if (result.isOk) {
+    showToast('평가가 저장되었습니다!', 'success');
+  } else {
+    showToast('저장 중 오류가 발생했습니다.', 'error');
+  }
+});
+
+document.getElementById('fileUpload').addEventListener('change', handleFileUpload);
+
+async function handleFileUpload(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  if (possibleTotalScores.length === 0) {
+    showToast('먼저 단계별 채점기준을 설정해주세요!', 'error');
+    e.target.value = '';
+    return;
+  }
+  // 검사용 메타정보
+  const {grade, classCount, studentNum} = getAssessmentMeta();
+  if (!grade || !classCount || !studentNum) {
+    showToast('학년, 반 수, 번호 수를 모두 입력하세요!', 'error');
+    e.target.value = '';
+    return;
+  }
+
+  document.getElementById('fileInfo').innerHTML = `<span class="text-blue-600">파일 ${file.name} 검증 중...</span>`;
+  document.getElementById('resultsSection').classList.add('hidden');
+
+  try {
+    const data = await readExcelFile(file);
+    validateData(data, file.name, grade, classCount, studentNum);
+  } catch (error) {
+    console.error('엑셀 파일 읽기 오류:', error);
+    showToast('파일을 읽는 중 오류가 발생했습니다.', 'error');
+    document.getElementById('fileInfo').innerHTML = '<span class="text-red-600">파일 읽기 실패</span>';
+  }
+
+  e.target.value = '';
+}
+
+function readExcelFile(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, { type: 'array' });
+
+        if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
+          reject(new Error('엑셀 파일에 시트가 없습니다.'));
+          return;
+        }
+
+        const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+        const range = XLSX.utils.decode_range('B6:I39');
+        const rangeData = [];
+
+        for (let row = range.s.r; row <= range.e.r; row++) {
+          const rowData = {};
+          for (let col = range.s.c; col <= range.e.c; col++) {
+            const cellAddress = XLSX.utils.encode_cell({ r: row, c: col });
+            const cell = firstSheet[cellAddress];
+            const columnLetter = XLSX.utils.encode_col(col);
+            const actualRow = row + 1;
+
+            rowData[columnLetter] = cell ? cell.v : '';
+            rowData._row = actualRow;
+            rowData._col = col;
+          }
+          rangeData.push(rowData);
+        }
+
+        if (rangeData.length === 0) {
+          reject(new Error('엑셀 파일의 B6:I39 범위가 비어있습니다.'));
+          return;
+        }
+
+        resolve(rangeData);
+      } catch (error) {
+        reject(error);
+      }
+    };
+    reader.onerror = () => reject(new Error('파일을 읽을 수 없습니다.'));
+    reader.readAsArrayBuffer(file);
+  });
+}
+// 학번 생성 함수
+function makeStudentId(grade, colIdx, rowIdx, classCount, studentNum) {
+  // colIdx: 0(B)~7(I), rowIdx: 0(6행:1번)
+  const ban = String(colIdx + 1);
+  let bunho = rowIdx + 1;
+  // 여기서 결번, 예외 등 필요한 경우 if (bunho===17)... 처럼 조정 가능
+  if (bunho > studentNum) return null; // 없는 번호라면 표시안함
+  return `${grade}${ban}${String(bunho).padStart(2,'0')}`;
+}
+
+function validateData(data, fileName, grade, classCount, studentNum) {
+  const errors = [];
+  let totalChecked = 0;
+
+  data.forEach((row, rowIdx) => {
+    const actualRow = row._row;
+
+    for (const [columnName, value] of Object.entries(row)) {
+      if (columnName === '_row' || columnName === '_col') continue;
+      if (value === '' || value === null || value === undefined) continue;
+
+      const scoreStr = String(value).trim();
+      const scoreNum = parseFloat(scoreStr);
+
+      if (isNaN(scoreNum)) continue;
+
+      totalChecked++;
+
+      if (!possibleTotalScores.includes(scoreNum)) {
+        const cellAddress = `${columnName}${actualRow}`;
+        // colIdx: 0(B)~7(I)
+        const colIdx = columnName.charCodeAt(0) - 66;
+        const studentId = makeStudentId(grade, colIdx, rowIdx, classCount, studentNum);
+        errors.push({
+          cell: cellAddress,
+          column: columnName,
+          row: actualRow,
+          value: scoreStr,
+          colIdx,
+          rowIdx,
+          studentId
+        });
+      }
+    }
+  });
+
+  displayResults(errors, data.length, totalChecked, fileName, grade, classCount, studentNum);
+
+  if (errors.length === 0) {
+    document.getElementById('fileInfo').innerHTML = `<span class="text-green-600">✅ ${fileName}: ${totalChecked}개 점수 검증 완료 (오류 없음)</span>`;
+  } else {
+    document.getElementById('fileInfo').innerHTML = `<span class="text-red-600">⚠️ ${fileName}: ${errors.length}개 오류 발견</span>`;
+  }
+}
+
+function displayResults(errors, totalRows, totalChecked, fileName, grade, classCount, studentNum) {
+  const resultsSection = document.getElementById('resultsSection');
+  const resultsContent = document.getElementById('resultsContent');
+
+  resultsSection.classList.remove('hidden');
+
+  const subject = document.getElementById('subjectSelect').value;
+  const assessmentName = document.getElementById('assessmentInput').value.trim();
+
+  if (errors.length === 0) {
+    resultsContent.innerHTML = `
+      <div class="bg-white border-4 border-green-500 rounded-lg p-8 print:border-2">
+        <div class="text-center mb-6 pb-4 border-b-2 border-gray-300">
+          <h3 class="text-3xl font-bold text-gray-800 mb-2">${escapeHtml(subject)} - ${escapeHtml(assessmentName)}</h3>
+          <p class="text-xl text-gray-600">검증 결과 보고서</p>
+        </div>
+
+        <div class="bg-green-50 border-2 border-green-300 rounded-lg p-6 mb-6">
+          <h4 class="text-xl font-bold text-green-800 mb-3">✅ 검증 성공!</h4>
+          <p class="text-lg text-gray-700">
+            B6:I39 범위에서 <strong class="text-green-700">${totalChecked}개 점수</strong>를 확인했습니다.<br>
+            모든 점수가 채점기준에 부합합니다.
+          </p>
+        </div>
+
+        <div class="bg-blue-50 border-2 border-blue-300 rounded-lg p-6">
+          <h4 class="text-lg font-bold text-blue-800 mb-3">📊 가능한 총점</h4>
+          <p class="text-base text-gray-700 leading-relaxed">
+            ${possibleTotalScores.join(', ')}
+          </p>
+        </div>
+
+        <div class="text-center mt-6 pt-6 border-t-2 border-gray-300 flex gap-3 justify-center">
+          <button onclick="copyResultsTable()"
+            class="bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-8 rounded-lg transition duration-200 print:hidden">
+            📋 표 형식으로 복사
+          </button>
+          <button onclick="window.print()"
+            class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 px-8 rounded-lg transition duration-200 print:hidden">
+            🖨️ 인쇄 / PDF 저장
+          </button>
+        </div>
+      </div>
+    `;
+  } else {
+    resultsContent.innerHTML = `
+      <div class="bg-white border-4 border-red-500 rounded-lg p-8 print:border-2">
+        <div class="text-center mb-6 pb-4 border-b-2 border-gray-300">
+          <h3 class="text-3xl font-bold text-gray-800 mb-2">${escapeHtml(subject)} - ${escapeHtml(assessmentName)}</h3>
+          <p class="text-xl text-gray-600">검증 결과 보고서</p>
+        </div>
+
+        <div class="bg-red-50 border-2 border-red-300 rounded-lg p-6 mb-6">
+          <h4 class="text-xl font-bold text-red-800 mb-3">⚠️ 오류 발견</h4>
+          <p class="text-lg text-gray-700">
+            총 <strong class="text-red-700">${totalChecked}개 점수</strong> 중 <strong class="text-red-700">${errors.length}개 오류</strong>가 발견되었습니다.
+          </p>
+        </div>
+
+        <div class="bg-blue-50 border-2 border-blue-300 rounded-lg p-6 mb-6">
+          <h4 class="text-lg font-bold text-blue-800 mb-3">📊 가능한 총점</h4>
+          <p class="text-base text-gray-700 leading-relaxed">
+            ${possibleTotalScores.join(', ')}
+          </p>
+        </div>
+
+        <div class="bg-yellow-50 border-2 border-yellow-400 rounded-lg p-6 mb-6">
+          <h4 class="text-xl font-bold text-red-800 mb-4">❌ 오류 상세 내역 (${errors.length}개)</h4>
+          <div class="space-y-3">
+            ${errors.map(err => {
+              const studentId = err.studentId;
+              return `
+                <div class="bg-white border-l-4 border-red-500 px-5 py-4 rounded shadow-sm">
+                  <div class="flex items-center gap-4 text-base">
+                    <span class="font-bold text-gray-700 min-w-[80px]">셀 ${escapeHtml(err.cell)}</span>
+                    ${studentId ? `<span class="text-gray-600">학번 ${studentId}</span>` : ''}
+                    <span class="bg-red-100 px-3 py-1 rounded font-mono text-red-700 font-bold">${escapeHtml(err.value)}점</span>
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        </div>
+
+        <div class="text-center mt-6 pt-6 border-t-2 border-gray-300 flex gap-3 justify-center">
+          <button onclick="copyResultsTable()"
+            class="bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-8 rounded-lg transition duration-200 print:hidden">
+            📋 표 형식으로 복사
+          </button>
+          <button onclick="window.print()"
+            class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 px-8 rounded-lg transition duration-200 print:hidden">
+            🖨️ 인쇄 / PDF 저장
+          </button>
+        </div>
+      </div>
+    `;
+  }
+}
+
+function showToast(message, type = 'info') {
+  const container = document.getElementById('toastContainer');
+  const toast = document.createElement('div');
+  const bgColor = type === 'success' ? 'bg-green-500' : type === 'error' ? 'bg-red-500' : 'bg-blue-500';
+  toast.className = `${bgColor} text-white px-6 py-3 rounded-lg shadow-lg mb-2 transition-all duration-300 transform`;
+  toast.textContent = message;
+  container.appendChild(toast);
+
+  setTimeout(() => toast.classList.add('opacity-0'), 2500);
+  setTimeout(() => toast.remove(), 3000);
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+function copyResultsTable() {
+  const subject = document.getElementById('subjectSelect').value;
+  const assessmentName = document.getElementById('assessmentInput').value.trim();
+  const possibleScoresStr = possibleTotalScores.join(', ');
+
+  const resultsContent = document.getElementById('resultsContent');
+  const errorDivs = resultsContent.querySelectorAll('.bg-yellow-50 .bg-white');
+
+  let tableText = `과목\t수행평가명\t가능한 총점\n`;
+  tableText += `${subject}\t${assessmentName}\t${possibleScoresStr}\n\n`;
+
+  if (errorDivs.length > 0) {
+    tableText += `오류 상세 내역\n`;
+    tableText += `학번\t점수\n`;
+    errorDivs.forEach(div => {
+      const text = div.textContent.trim();
+      const studentIdMatch = text.match(/학번\s+(\d+)/);
+      const scoreMatch = text.match(/(\d+(?:\.\d+)?)점/);
+      if (studentIdMatch && scoreMatch) {
+        const studentId = studentIdMatch[1];
+        const score = scoreMatch[1];
+        tableText += `${studentId}\t${score}\n`;
+      }
+    });
+  } else {
+    tableText += `오류 없음\n`;
+  }
+
+  // 임시 텍스트 영역 생성하여 복사
+  const textarea = document.createElement('textarea');
+  textarea.value = tableText;
+  textarea.style.position = 'fixed';
+  textarea.style.opacity = '0';
+  document.body.appendChild(textarea);
+  textarea.select();
+
+  try {
+    document.execCommand('copy');
+    showToast('표가 클립보드에 복사되었습니다!', 'success');
+  } catch (err) {
+    showToast('복사에 실패했습니다.', 'error');
+  } finally {
+    document.body.removeChild(textarea);
+  }
+}
+
+async function init() {
+  const initResult = await window.dataSdk.init(dataHandler);
+  if (!initResult.isOk) {
+    showToast('데이터 초기화 중 오류가 발생했습니다.', 'error');
+  }
+
+  if (window.elementSdk) {
+    window.elementSdk.init({
+      defaultConfig,
+      onConfigChange,
+      mapToCapabilities: (config) => ({
+        recolorables: [
+          { get: () => config.background_color || defaultConfig.background_color, set: (v) => { config.background_color = v; window.elementSdk.setConfig({ background_color: v }); } },
+          { get: () => config.surface_color || defaultConfig.surface_color, set: (v) => { config.surface_color = v; window.elementSdk.setConfig({ surface_color: v }); } },
+          { get: () => config.text_color || defaultConfig.text_color, set: (v) => { config.text_color = v; window.elementSdk.setConfig({ text_color: v }); } },
+          { get: () => config.primary_action_color || defaultConfig.primary_action_color, set: (v) => { config.primary_action_color = v; window.elementSdk.setConfig({ primary_action_color: v }); } },
+          { get: () => config.secondary_action_color || defaultConfig.secondary_action_color, set: (v) => { config.secondary_action_color = v; window.elementSdk.setConfig({ secondary_action_color: v }); } }
+        ],
+        borderables: [],
+        fontEditable: {
+          get: () => config.font_family || defaultConfig.font_family,
+          set: (v) => { config.font_family = v; window.elementSdk.setConfig({ font_family: v }); }
+        },
+        fontSizeable: {
+          get: () => config.font_size || defaultConfig.font_size,
+          set: (v) => { config.font_size = v; window.elementSdk.setConfig({ font_size: v }); }
+        }
+      }),
+      mapToEditPanelValues: (config) => new Map([
+        ["page_title", config.page_title || defaultConfig.page_title],
+        ["upload_button_text", config.upload_button_text || defaultConfig.upload_button_text]
+      ])
+    });
+  }
+}
+
+init();
+</script>
+</body>
+</html>
